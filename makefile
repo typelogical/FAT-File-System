@@ -8,11 +8,11 @@ all : main
 
 
 Sdisk.o : Sdisk.h Sdisk.cpp
-	$(CC) -c -o Sdisk.o Sdisk.cpp
+	$(CC) $(FLAGS) -c -o Sdisk.o Sdisk.cpp
 fileSystem.o : fileSystem.h fileSystem.cpp
-	$(CC) -c -o fileSystem.o fileSystem.cpp
+	$(CC) $(FLAGS) -c -o fileSystem.o fileSystem.cpp
 main.o : main.cpp
-	$(CC) -c -o main.o main.cpp
+	$(CC) $(FLAGS) -c -o main.o main.cpp
 
 main: $(OBJECTS)
 	$(CC) -o main $(OBJECTS)

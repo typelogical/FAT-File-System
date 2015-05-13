@@ -35,4 +35,5 @@ vector<int> fat;             // FAT
 vector<string> block (string buffer, int blockSize);
 // Check whether block belongs to the file
 bool checkFile (string file, int blockNum);
+int setFristBlock (string file, int firstBlock);
 };
