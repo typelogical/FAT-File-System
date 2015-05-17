@@ -12,7 +12,9 @@
 using namespace std;
 #define ALLOC 0		// the index of the free block head
 #define EMPTY "#"
-
+#define ROOTBLOCK 1
+#define ERR_NOSUCHFILE -1
+#define FATBLOCK 2
 FileSystem::FileSystem () {}
 FileSystem::FileSystem (string fileName,size_t numBlocks, size_t _blockSize) : 
 Sdisk (fileName, numBlocks, _blockSize)  {        
@@ -66,7 +68,6 @@ Sdisk (fileName, numBlocks, _blockSize)  {
                 fat [numBlocks - 1] = 0;    // The sentinel for the freeblock list
                 // Block the buffer to insert into Sdisk in block increments
 		
-                fsSynch ();
 	} else { // Read in existing file system
                rootBuffer = "";
                getBlock (1, rootBuffer);
@@ -79,26 +80,23 @@ Sdisk (fileName, numBlocks, _blockSize)  {
                         fileNames.push_back (t1);
                         firstBlocks.push_back (t2); 
                }
-             
+               // Read in FAT
                short t3;
                int totalSize = numBlocks * 5;
                fatSize = totalSize / blockSize + 1;
-               string tmp = "";
-               for (int i = 0; i < fatSize; ++i) {
-                        getBlock (2+i, tmp);
-                        oss.str (tmp);
-                        for (int i = 0; i < blockSize; ++i) {
-                                oss << t3;
-                                fat.push_back (t3);
-                        }                       
-               }            
-        	fsSynch ();              
-	}	      
+		getBlock (2+i, tmp);
+		oss.str (tmp);
+		for (int i = 0; i < blockSize; ++i) {
+			oss << t3;
+			fat.push_back (t3);
+                }                       
+        }            
+        fsSynch ();              	      
 }
 int FileSystem::fsSynch() {	
 	// Write ROOT to disk
         string rootBuffer = "";
-	getBlock (1, rootBuffer);
+	getBlock (ROOTBLOCK, rootBuffer);
         ostringstream oss (ios::out | ios::app);
         oss.str (rootBuffer);
 	oss.seekp (0);    
@@ -123,7 +121,6 @@ int FileSystem::fsSynch() {
         for (int i = 0; i < numFatBlocks; ++i) {
                 putBlock (2 + i, fatBlocks [i]);
         }
-       	
 }
 int FileSystem::newFile (string file) {
 	// Check if file already exists
@@ -135,26 +132,21 @@ int FileSystem::newFile (string file) {
 	}
 	// Find next empty slot
 	index = find (begin, end, "xxxxxx");
-	if (index != end) {
-		*index = file;
-		// Initial block is empty for new file
-		firstBlocks[fileNames.size () - ((end - 1) - index)] = 0;
-	}
+	*index = file;
 	fsSynch ();
 	return 0;
 }
 int FileSystem::rmFile (string file) {
-	vector<string>::iterator begin = fileNames.begin (), end = fileNames.end (), index;
-	index = find (begin, end, file);	
-	if (index  == end) {
-		return 1;	// file does not exist
-	}
+	int firstBlock = getFirstBlock (file);
 	
-	if (firstBlocks[fileNames.size () - ((end - 1) - index)] != 0) {
-		return 1;	// file is not empty 
+	if (firstBlock == ERR_NOSUCHFILE) {
+		return ERR_NOSUCHFILE;	// file is not empty 
 	}
 
+	vector<string>::iterator begin = fileNames.begin (), end = fileNames.end (), index;
+	index = find (begin, end, file);	
 	*index = "xxxxxx";
+
 	fsSynch ();
 	return 0;
 }
@@ -185,10 +177,8 @@ int FileSystem::addBlock (string file, string block) {
 	// update the root entry for an empty file	
 	
 	if (nextBlock == 0) {
-		vector<string>::iterator begin = fileNames.begin (), end = fileNames.end (), index;
-		index = find (begin, end, file);
 		// Change the root entry for file to the coresponding free block
-		firstBlocks [fileNames.size () - ((end - 1) - index)] = allocate;
+		setFirstBlock (file, allocate);
 	} else {
 		// Get the last block of file
 		while (fat [nextBlock] != 0) {				// changed from nextblock 	
@@ -206,18 +196,51 @@ int FileSystem::addBlock (string file, string block) {
 	return 0;
 }
 int FileSystem::delBlock (string file, int blockNum) {
-	// stub
+	if (checkFile (file, blockNum)) {
+		return 1;
+	}
+	int prevBlock = getFirstBlock (file);
+	// Empty block
+	if (prevBlock == 0)	
+	{
+		return -1;
+	} else {
+		// get the previous block
+		while (fat [prevBlock] != blockNum && fat[prevBlock] != 0) {
+			prevBlock = fat [prevBlock];
+		}
+	}
+	
+	fat [prevBlock] = fat [blockNum];
+	int tmp = fat [ALLOC]; 	// save the curr fat [0]
+	fat [ALLOC] = blockNum;	// replace with deleted block
+	fat [blockNum] = tmp; // place old fat [0] into deleted blocks old place
+	
+	return 0;
 }
 int FileSystem::readBlock (string file, int blockNum, string &buffer) {
-	// stub	
+	if (!checkFile (file, blockNum)) {
+		return -1;
+	}
+	return getBlock (blockNum, buffer);	
 }
 int FileSystem::writeBlock (string file, int blockNum, string buffer) {
-	// stub
+	if (!checkFile (file, blockNum)) {
+		return 1;
+	}
+	return putBlock (blockNum, buffer);
 }
 
 
 int FileSystem::nextBlock (string file, int blockNum) {
-	// stub
+	if (!checkFile (file, blockNum)) {
+		return -1;
+	}
+	int block = fat [blockNum];
+	if (block == 0) {
+		return -1;
+	}	
+	return block;
 }
 
 vector<string> FileSystem::block (string buffer, int blockSize) {
