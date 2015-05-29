@@ -1,6 +1,7 @@
 #include <iostream>
 #include <fstream>
 #include "Sdisk.h"
+#include "defines.h"
 using namespace std;
 
 Sdisk::Sdisk (string diskname, size_t numBlocks, size_t blockSize) {
@@ -29,7 +30,7 @@ int Sdisk::getBlock (int blockNum, string& buffer) {
         string diskFile = diskName + ".dat";	
         ifstream in (diskFile.c_str ());
         if (in.bad () || blockNum < 0 || blockNum > numBlocks)
-                return 1;
+                return ERR_DISKREAD;
         buffer = "";
         int blockStart = blockNum * blockSize;
         in.seekg(blockStart);
@@ -50,7 +51,7 @@ int Sdisk::putBlock (int blockNum,string buffer) {
        iofs.seekg (blockStart);
        int size = buffer.size ();       
         if (size > blockSize)
-                return 1;
+                return ERR_DISKWRITE;
        for (int i = 0; i < size; ++i) {
                 iofs << buffer [i];
         }

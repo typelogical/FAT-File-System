@@ -11,17 +11,23 @@ Shell::Shell (string prompt) : FileSystem (DISKNAME, NUMBLOCKS, BLOCKSIZE) {
 	this->prompt = prompt;
 }
 string fileNotFoundMsg = "File not found.";
-int Shell::dir () {  		//lists all files
-	cout << "File Names\n----------\n\n";
+/*
+ 	lists all files
+*/
+int Shell::dir () {
+	cout << "File Names\n----------\n";
 	vector <string> createdFiles = ls ();
 	size_t size = createdFiles.size ();
 	for (short i = 0; i < size; ++i) {
 		if (createdFiles [i] != FILENAMEDEFAULT) {
-			cout << createdFiles [i] << endl;
+			cout << "\n" << createdFiles [i] << endl;
 		}
 	}
 }
-int Shell::add (string file) { 	// add a new file using input from the keyboard
+/*
+	add a new file using input from the keyboard
+*/
+int Shell::add (string file) {
 	if (file.size () > 6)
 		return ERR_MAXFILELEN;
 	if (newFile (file) == ERR_MAXFILES)
@@ -39,19 +45,38 @@ int Shell::add (string file) { 	// add a new file using input from the keyboard
 	
 	return SUCCESS;
 }
-int Shell::del (string file) { 	// deletes the file
+/*
+	deletes the file
+*/
+int Shell::del (string file) {
 	int block = getFirstBlock (file);
 	if (block == ERR_FILENOTFOUND) {
 		cout << fileNotFoundMsg << endl;
 		return ERR_FILENOTFOUND;
 	}
 	for (;block != 0 ;block = getFirstBlock (file)) {
-		delBlock (file, block);
+		short status = delBlock (file, block);
+		if (status == ERR_EMPTYFILE) {
+			cout << "Deleting empty file\n";
+			break;
+		}
+		else if (status == ERR_NOBLOCK) {
+			cout << "No such block\n";
+			break;
+		} else {
+			cout << "Deleted block" << endl;
+			cout << block << endl;
+		}
+	}
+	if (rmFile (file) != SUCCESS) {
+		cout << "rm: unable to remove file\n";
 	}
 }
-int Shell::type (string file) { // lsts the contents of the file	
+/*
+	lsts the contents of the file	
+*/
+int Shell::type (string file) { 
 	int block = getFirstBlock (file); 
-	//checkFileExists (file);
 	if (block == ERR_FILENOTFOUND) {
 		cout << fileNotFoundMsg << endl;
 		return ERR_FILENOTFOUND;
@@ -103,8 +128,7 @@ int Shell::copy (string file1, string file2) { // copies file1 to file2
 	}
 	return SUCCESS;
 }
-void Shell::interface ()
-{
+void Shell::interface () {
 	// This main program inputs commands to the shell.
 	// It inputs commands as : command op1 op2
 	// You should modify it to work for your implemnation
@@ -116,28 +140,19 @@ void Shell::interface ()
 void Shell::fetch () {
 	string s;
 	cout << "\n" <<  prompt;
-	/* 
- 	 * This produces an read error when an empty line is read
- 	 * The error occurs when the line is parsed
- 	 * The parse fails and the previous command is re executed
- 	 */
 	getline (cin, s);
 	parse2 (s);
 }
 void Shell::parse1 () {}
 void Shell::parse2 (string s) {
-	if (s == "") {
-		command = ""; // not needed anymore, since this is handle in execute call
+	if (s == "")
 		return;
-	}
-
 	istringstream ss;
 	ss.str (s);
 	string *tokens [MAXARGS + 1];
 	tokens [0] = &command;
 	tokens [1] = &op1;
 	tokens [2] = &op2;
-	
 	for (int i = 0; i < MAXARGS + 1 && (ss >> *(tokens [i])); ++i);
 }
 void Shell::execute () {
@@ -145,7 +160,7 @@ void Shell::execute () {
 		// No need to do anything, nothing meaningful was entered but only a return
 	} else if (command == "dir") {
 		dir ();
-	} else if (command == "add" && op1 != "") { 	// 5/25/15: added logic to handle propely dangling commands
+	} else if (command == "add" && op1 != "") {
 		add (op1);
 	} else if (command == "del" && op1 != "") {
 		del (op1);

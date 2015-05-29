@@ -8,13 +8,10 @@
 #define __DEBUG
 #include "Sdisk.h"
 #include "fileSystem.h"
-
+#include "defines.h"
 using namespace std;
-#define ALLOC 0		// the index of the free block head
-#define EMPTY "#"
-#define ROOTBLOCK 1
-#define ERR_NOSUCHFILE -1
-#define FATBLOCK 2
+
+
 FileSystem::FileSystem () {}
 FileSystem::FileSystem (string fileName,size_t numBlocks, size_t _blockSize) : 
 Sdisk (fileName, numBlocks, _blockSize)  {        
@@ -29,6 +26,7 @@ Sdisk (fileName, numBlocks, _blockSize)  {
         
         iofs.open (fileName.c_str (), ios::in | ios::out);
 	if (iofs.good ()) {
+
 		ifstream specFs ((fileName + ".spec").c_str ());
 		specFs >> this->diskName >> this->numBlocks >> this->blockSize;
                 this->blockSize = _blockSize;			
@@ -45,7 +43,7 @@ Sdisk (fileName, numBlocks, _blockSize)  {
 	if (rootBuffer [0] != 'x') {
                 // Build Root
 		for (int i = 0; i < rootSize; ++i) {
-			fileNames.push_back ("xxxxxx");
+			fileNames.push_back (FILENAMEDEFAULT);
 			firstBlocks.push_back (0);
 		}
                 // Build FAT
@@ -84,8 +82,8 @@ Sdisk (fileName, numBlocks, _blockSize)  {
                short t3;
                int totalSize = numBlocks * 5;
                fatSize = totalSize / blockSize + 1;
-		getBlock (2+i, tmp);
-		oss.str (tmp);
+	 //	getBlock (2+i, tmp);
+		//oss.str (tmp);
 		for (int i = 0; i < blockSize; ++i) {
 			oss << t3;
 			fat.push_back (t3);
@@ -128,105 +126,102 @@ int FileSystem::newFile (string file) {
 	file = file.substr (0, 5);
 	vector<string>::iterator begin = fileNames.begin (), end = fileNames.end (), index;
 	if (find (begin, end, file) != end) {
-		return 1;
+		return -1;
 	}
 	// Find next empty slot
-	index = find (begin, end, "xxxxxx");
+	index = find (begin, end, FILENAMEDEFAULT);
+	if (index == end) {
+		return ERR_FILEEXISTS;
+	}
 	*index = file;
 	fsSynch ();
-	return 0;
+	return SUCCESS;
 }
 int FileSystem::rmFile (string file) {
-	int firstBlock = getFirstBlock (file);
-	
-	if (firstBlock == ERR_NOSUCHFILE) {
-		return ERR_NOSUCHFILE;	// file is not empty 
+	int firstBlock = getFirstBlock (file);	
+	if (firstBlock == ERR_FILENOTFOUND) {
+		return ERR_FILENOTFOUND;	// file is not empty 
 	}
 
 	vector<string>::iterator begin = fileNames.begin (), end = fileNames.end (), index;
 	index = find (begin, end, file);	
-	*index = "xxxxxx";
+	*index = FILENAMEDEFAULT;
 
 	fsSynch ();
-	return 0;
+	return SUCCESS;
 }
 int FileSystem::getFirstBlock (string file) {
 	vector<string>::iterator begin = fileNames.begin (), end = fileNames.end (), index;
 	index = find (begin, end, file);	
-	if (index == end) {
-		return -1;
-	}
+	if (index == end)
+		return ERR_FILENOTFOUND;
 	return firstBlocks [fileNames.size () - ((end - 1) - index)];
 }
-int FileSystem::setFristBlock (string file, int firstBlock) {
+int FileSystem::setFirstBlock (string file, int firstBlock) {
 	vector<string>::iterator begin = fileNames.begin (), end = fileNames.end (), index;
 	index = find (begin, end, file);	
-	if (index == end) {
-		return -1;
-	}
+	if (index == end)
+		return ERR_FILENOTFOUND;
 	firstBlocks [fileNames.size () - ((end - 1) - index)] = firstBlock;
-	return 0;
+	return SUCCESS;
 }
 int FileSystem::addBlock (string file, string block) {	
 	// Find the last block and append the new block
-	int nextBlock  = getFirstBlock (file);
+	int lastBlock  = getFirstBlock (file);
 	int allocate = fat [ALLOC];
 	
 	if (allocate == 0) 
 		return -1;
-	// update the root entry for an empty file	
-	
-	if (nextBlock == 0) {
+	if (lastBlock == 0) {  // update the root entry for an empty file		
 		// Change the root entry for file to the coresponding free block
 		setFirstBlock (file, allocate);
 	} else {
 		// Get the last block of file
-		while (fat [nextBlock] != 0) {				// changed from nextblock 	
-			nextBlock = fat [nextBlock];			
+		while (fat [lastBlock] != 0) {		// changed from nextblock 	
+			block = fat [lastBlock];			
 		}
-		// Set the last block to point to new allocated block	
 	}
 	
-	fat [nextBlock] = allocate;
-	fat [ALLOC] = fat [allocate];
-
-	fat [allocate] = 0;	
+	fat [lastBlock] = allocate;	// Append a new free block at the end of the file
+	fat [ALLOC] = fat [allocate];	// Set the new free block
+	fat [allocate] = 0;		// Set allocated block to 0
 	putBlock (allocate, block);	
 	fsSynch ();
 	return 0;
 }
 int FileSystem::delBlock (string file, int blockNum) {
-	if (checkFile (file, blockNum)) {
-		return 1;
+	if (!checkFile (file, blockNum)) {
+		return ERR_NOBLOCK;
 	}
 	int prevBlock = getFirstBlock (file);
-	// Empty block
-	if (prevBlock == 0)	
-	{
-		return -1;
-	} else {
-		// get the previous block
-		while (fat [prevBlock] != blockNum && fat[prevBlock] != 0) {
+	if (blockNum == 0) {			// Empty block
+		return ERR_EMPTYFILE;
+	} else if (prevBlock == blockNum) {	// Single block
+		fat [prevBlock] = 0;
+		setFirstBlock (file, 0);
+	}
+	else {					// List
+		// Get previous block of blockNum
+		while (fat [prevBlock] != blockNum && fat[prevBlock] != 0) {	// get the previous block
 			prevBlock = fat [prevBlock];
 		}
+		fat [prevBlock] = fat [blockNum];
 	}
 	
-	fat [prevBlock] = fat [blockNum];
-	int tmp = fat [ALLOC]; 	// save the curr fat [0]
-	fat [ALLOC] = blockNum;	// replace with deleted block
-	fat [blockNum] = tmp; // place old fat [0] into deleted blocks old place
-	
+	int tmp = fat [ALLOC]; 			// save the curr fat [0]
+	fat [ALLOC] = blockNum;			// replace with deleted block
+	fat [blockNum] = tmp; 			// place old fat [0] into deleted blocks old place
 	return 0;
 }
 int FileSystem::readBlock (string file, int blockNum, string &buffer) {
 	if (!checkFile (file, blockNum)) {
-		return -1;
+		return ERR_NOBLOCK;
 	}
 	return getBlock (blockNum, buffer);	
 }
 int FileSystem::writeBlock (string file, int blockNum, string buffer) {
 	if (!checkFile (file, blockNum)) {
-		return 1;
+		return ERR_NOBLOCK;
 	}
 	return putBlock (blockNum, buffer);
 }
@@ -237,8 +232,8 @@ int FileSystem::nextBlock (string file, int blockNum) {
 		return -1;
 	}
 	int block = fat [blockNum];
-	if (block == 0) {
-		return -1;
+	if (block == ENDBLOCK) {
+		return ENDBLOCK;
 	}	
 	return block;
 }
@@ -246,7 +241,7 @@ int FileSystem::nextBlock (string file, int blockNum) {
 vector<string> FileSystem::block (string buffer, int blockSize) {
         int numBlocks = 0;
         vector <string> blocks;
-        if (buffer.length () % blockSize ==  0) {	// change from >
+        if (buffer.length () % blockSize ==  0) {
               numBlocks = buffer.length () / blockSize;
         } else {
               numBlocks = buffer.length () / blockSize + 1;
@@ -265,6 +260,16 @@ vector<string> FileSystem::block (string buffer, int blockSize) {
         }
 
         return blocks;
+}
+vector<string> FileSystem::ls () {
+	size_t size = fileNames.size ();
+	vector <string> createdFiles;
+	for (short i = 0; i < size; ++i) {
+		string file = fileNames [i];
+		if (file != FILENAMEDEFAULT)
+			createdFiles.push_back (file);
+	}
+	return createdFiles;
 }
 #ifdef __DEBUG
 int FileSystem::getFatSize () {
@@ -289,14 +294,15 @@ void FileSystem::printFat () {
 
 bool FileSystem::checkFile (string file, int blockNum) {
 	int currBlock = getFirstBlock (file);
-	if (currBlock == 0) {
-		return false;
-	}
+	if (currBlock == 0) return false;
+	// Handle case for single block list
+	if (currBlock == blockNum) return true;
+	
 	while (fat [currBlock] != 0) {
 		currBlock = fat [currBlock];
 		if (currBlock == blockNum) return true;
 	}
-	
+		
 	return false;
 }
 
