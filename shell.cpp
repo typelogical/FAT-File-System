@@ -56,20 +56,10 @@ int Shell::del (string file) {
 	}
 	for (;block != 0 ;block = getFirstBlock (file)) {
 		short status = delBlock (file, block);
-		if (status == ERR_EMPTYFILE) {
-			cout << "Deleting empty file\n";
-			break;
-		}
-		else if (status == ERR_NOBLOCK) {
-			cout << "No such block\n";
-			break;
-		} else {
-			cout << "Deleted block" << endl;
-			cout << block << endl;
-		}
 	}
+
 	if (rmFile (file) != SUCCESS) {
-		cout << "rm: unable to remove file\n";
+		cout << "del: unable to remove file\n";
 	}
 }
 /*
